@@ -1,0 +1,414 @@
+---
+title: "ProjectKNN"
+output: html_document
+date: "2023-11-27"
+---
+#general background
+this dataset provides the cost the insurance has charged with the policy holder's info on sex, region, # of children, smoker, bmi, and age. 
+
+#motivation 
+what motivated me to work on this project is that its interesting to see the charges that insurance will bill you based on different factors
+
+#who cares?
+who cares about this project? people that have health issues and have to pay for 
+insurance. 
+
+#what are we doing
+we are trying to fit both linear regression/ knn regression on the model to predict
+insurance costs. 
+
+#objectives
+we want to fit linear regression model see what are some features that affect insurance costs. fit knn regression model. compare the two and their performances 
+this is a regression problem since we are trying to find out costs which is 
+quantitative. Difference between scaled and unscaled knn regression. 
+
+#setup
+```{r}
+setwd("C:/Users/Kathy/Desktop/Stat/")
+
+insurance=read.csv("insurance.csv",stringsAsFactors = T)
+
+#no missing values 
+sum(is.na(insurance))
+insurance$children=as.factor(insurance$children)
+
+summary(insurance)
+attach(insurance)
+```
+
+
+#predictors 
+```{r}
+#key predictors and significance 
+lm_model = lm(charges~.,data=insurance)
+summary(lm_model)
+#age, bmi, children, and if you are a smoker are very significant 
+
+
+#collinearity
+pairs(insurance[,-7])
+```
+sex,smoker,region, children are categorical (qualitative) and the rest are quantitative
+our response is charges which is quantitative
+our predictors are sex, smoker, region, bmi, age, and children
+age, bmi, children2, and if you are a smoker are very significant 
+
+
+#visuals for characteristics of the dataset
+```{r}
+#visuals and characteristics 
+boxplot(charges~smoker, data=insurance,main="charges and smoker")
+boxplot(charges~children, data=insurance,main="charges and children")
+boxplot(charges~age, data=insurance,main="charges and age")
+boxplot(charges~bmi, data=insurance,main="charges and bmi")
+boxplot(charges~region,data=insurance,main="charges and region")
+boxplot(charges~sex,data=insurance,main="charges and sex")
+
+
+```
+
+
+
+#unscaled knn model
+```{r}
+#using all predictors, unscaled
+set.seed(2002)
+#split indices for training and testing 
+train_indices = sample(1:nrow(insurance),0.8*nrow(insurance))
+
+training=insurance[train_indices,]
+testing=insurance[-train_indices,]
+
+
+library(class)
+library(FNN)
+
+set.seed(2002)
+
+#convert predictors to numeric 
+training$sex = as.numeric(training$sex) 
+testing$sex = as.numeric(testing$sex)
+training$smoker = as.numeric(training$smoker) 
+testing$smoker = as.numeric(testing$smoker)
+training$region = as.numeric(training$region) 
+testing$region = as.numeric(testing$region)
+training$children=as.numeric(training$children)
+testing$children=as.numeric(testing$children)
+
+
+predictors = setdiff(names(insurance),"charges")
+
+#cross validation
+ctrl = trainControl(method = "cv", number = 5)
+
+#knn model which is the optimal k 
+knn_model2 = train(
+  x = training[, -6],
+  y = training$charges,
+  method = "knn",
+  tuneGrid = expand.grid(k = 1:50),
+  trControl = ctrl
+)
+knn_model2
+
+#knn regression model 
+knn_model=knn.reg(train=training[,predictors],test=testing[,predictors],y=training$charges, k=1)
+#predicting
+predict=knn_model$pred
+
+actual = testing$charges
+#table to compare
+compare= data.frame(Actual = actual,Predicted = predict)
+compare
+plot(actual, predict, 
+     main = "Actual vs. Predicted", 
+     xlab = "Actual Values", 
+     ylab = "Predicted Values",
+     col = "blue",  # Set the color of the points to blue
+     pch = 16)      # Use solid circles for the points
+
+
+abline(a = 0, b = 1, col = "red")
+
+
+points(actual, actual, col = "green", pch = 17)  # Use solid triangles for the actual values
+
+
+
+```
+The RMSE value is very high in this model. Which is not good. The predictors are not scaled. Since KNN is distance based, its very important that the predictors are scaled. 
+
+#scaling with knn and cross validation for which neighbor is the best high rmse
+```{r}
+#scaling with all predictors
+
+library(FNN)
+library(caret)
+set.seed(2002)
+
+#split into test and training
+quantitative = c("bmi","age")
+train_indices2=sample(1:nrow(insurance),0.8*nrow(insurance))
+train=insurance[train_indices2,]
+test=insurance[-train_indices2,]
+
+#these are all the quantitative going to be scaled
+train_q=train[,quantitative]
+testq=test[,quantitative]
+
+#scaled quantitative
+trains=scale(train_q)
+tests=scale(testq)
+
+#combine quantitative and qualitative 
+train_scaled=cbind(train[,setdiff(names(train),quantitative)],trains)
+test_scaled=cbind(test[,setdiff(names(test),quantitative)],tests)
+
+#convert predictors to numeric 
+train_scaled$sex = as.numeric(train_scaled$sex) 
+test_scaled$sex = as.numeric(test_scaled$sex)
+train_scaled$smoker = as.numeric(train_scaled$smoker) 
+test_scaled$smoker = as.numeric(test_scaled$smoker)
+train_scaled$region = as.numeric(train_scaled$region) 
+test_scaled$region = as.numeric(test_scaled$region)
+train_scaled$children=as.numeric(train_scaled$children)
+test_scaled$children=as.numeric(test_scaled$children)
+
+#cross validation 5 k folds
+ctrl = trainControl(method = "cv", number = 5)
+
+#knn model which is the optimal k 
+knn_model3 = train(
+  x = train_scaled[, -6],
+  y = train_scaled$charges,
+  method = "knn",
+  tuneGrid = expand.grid(k = 1:50),
+  trControl = ctrl
+)
+knn_model3
+
+optimal_k = knn_model3$bestTune$k
+cat('Optimal k:', optimal_k, '\n')
+
+#training with optimal k 
+final_knn_model = knn.reg(train_scaled[, -6], test_scaled[, -6], train_scaled$charges, k = optimal_k)
+
+
+#predicting
+predict2=final_knn_model$pred
+
+actual2 = test_scaled$charges
+
+#comparing actual and predictions
+compare2= data.frame(Actual = actual2,Predicted = predict2)
+compare2
+
+
+#plotting
+plot(actual2, predict2, 
+     main = "Actual vs. Predicted", 
+     xlab = "Actual Values", 
+     ylab = "Predicted Values",
+     col = "blue",  # Set the color of the points to blue
+     pch = 16)      # Use solid circles for the points
+
+
+abline(a = 0, b = 1, col = "red")
+
+
+points(actual2, actual2, col = "green", pch = 16)  # Use solid triangles for the actual values
+
+
+
+
+
+```
+scaling does not improve the model. outliers could be a problem. this is interesting to see that the values are close together but the rmse is very high. higher than when not scaled. 
+
+#linear no scaling no cross validation high rmse
+
+```{r}
+
+linear_model = lm(charges ~ ., data = training)
+linear_predictions = predict(linear_model, newdata = testing)
+actual3=testing$charges
+compare_linear = data.frame(Actual = actual3, Predicted = linear_predictions)
+compare_linear
+mse_linear = mean((linear_predictions - actual3)^2)
+cat('MSE for Linear Regression:', mse_linear, '\n')
+
+plot(actual3, linear_predictions, 
+     main = "Actual vs. Predicted (Linear Regression)", 
+     xlab = "Actual Values", 
+     ylab = "Predicted Values",
+     col = "blue",  # Set the color of the points to blue
+     pch = 16)      # Use solid circles for the points
+
+abline(a = 0, b = 1, col = "red")
+
+points(actual3, actual3, col = "green", pch = 17)  
+
+```
+
+linear regression does not require scaling. 
+
+#linear no scaling cross validation better rmse
+
+```{r}
+library(boot)
+library(caret)
+
+# Cross-validation to find the optimal linear model
+ctrl <- trainControl(method = "cv", number = 5)
+linear_model_cv = train(
+  x = training[, -6],  # Exclude the target variable
+  y = training$charges,
+  method = "lm",
+  trControl = ctrl
+)
+
+
+optimal_linear_model <- linear_model_cv$finalModel
+
+predictions = predict(optimal_linear_model, newdata = testing)
+
+mse_test <- mean((predictions - testing$charges)^2)
+cat('MSE on Test Set:', mse_test, '\n')
+
+actual4=testing$charges
+compare_linear = data.frame(Actual = actual4, Predicted = predictions)
+compare_linear
+mse_linear = mean((predictions - actual4)^2)
+cat('MSE for Linear Regression:', mse_linear, '\n')
+
+plot(actual4, predictions, 
+     main = "Actual vs. Predicted (Linear Regression)", 
+     xlab = "Actual Values", 
+     ylab = "Predicted Values",
+     col = "blue",  # Set the color of the points to blue
+     pch = 16)      # Use solid circles for the points
+
+abline(a = 0, b = 1, col = "red")
+
+points(actual3, actual3, col = "green", pch = 17)  
+
+```
+
+
+
+
+#removing charge outliers in the data
+
+```{r}
+q = quantile(insurance$charges, c(0.25, 0.75))
+iqr = q[2] - q[1]
+lower_bound = q[1] - 1.5 * iqr
+upper_bound = q[2] + 1.5 * iqr
+
+outliers = insurance$charges < lower_bound | insurance$charges > upper_bound
+
+insurance <- insurance[!outliers, ]
+
+
+```
+
+
+#knn with charge (no outliers) better rmse 
+
+```{r}
+
+#scaling with all predictors
+
+library(FNN)
+library(caret)
+set.seed(2002)
+
+#split into test and training
+quantitative = c("bmi","age")
+train_indices2=sample(1:nrow(insurance),0.8*nrow(insurance))
+train=insurance[train_indices2,]
+test=insurance[-train_indices2,]
+
+#these are all the quantitative going to be scaled
+train_q=train[,quantitative]
+testq=test[,quantitative]
+
+#scaled quantitative
+trains=scale(train_q)
+tests=scale(testq)
+
+#combine quantitative and qualitative 
+train_scaled=cbind(train[,setdiff(names(train),quantitative)],trains)
+test_scaled=cbind(test[,setdiff(names(test),quantitative)],tests)
+
+#convert predictors to numeric 
+train_scaled$sex = as.numeric(train_scaled$sex) 
+test_scaled$sex = as.numeric(test_scaled$sex)
+train_scaled$smoker = as.numeric(train_scaled$smoker) 
+test_scaled$smoker = as.numeric(test_scaled$smoker)
+train_scaled$region = as.numeric(train_scaled$region) 
+test_scaled$region = as.numeric(test_scaled$region)
+train_scaled$children=as.numeric(train_scaled$children)
+test_scaled$children=as.numeric(test_scaled$children)
+
+#cross validation 5 k folds
+ctrl = trainControl(method = "cv", number = 5)
+
+#knn model which is the optimal k 
+knn_model3 = train(
+  x = train_scaled[, -6],
+  y = train_scaled$charges,
+  method = "knn",
+  tuneGrid = expand.grid(k = 1:50),
+  trControl = ctrl
+)
+knn_model3
+
+optimal_k = knn_model3$bestTune$k
+cat('Optimal k:', optimal_k, '\n')
+
+#training with optimal k 
+final_knn_model = knn.reg(train_scaled[, -6], test_scaled[, -6], train_scaled$charges, k = optimal_k)
+
+
+#predicting
+predict2=final_knn_model$pred
+
+actual2 = test_scaled$charges
+
+#comparing actual and predictions
+compare2= data.frame(Actual = actual2,Predicted = predict2)
+compare2
+
+
+#plotting
+plot(actual2, predict2, 
+     main = "Actual vs. Predicted", 
+     xlab = "Actual Values", 
+     ylab = "Predicted Values",
+     col = "blue",  # Set the color of the points to blue
+     pch = 16)      # Use solid circles for the points
+
+
+abline(a = 0, b = 1, col = "red")
+
+
+points(actual2, actual2, col = "green", pch = 16)  # Use solid triangles for the actual values
+
+
+
+```
+
+#visuals with no charge outliers 
+
+```{r}
+#visuals and characteristics 
+boxplot(charges~smoker, data=insurance,main="charges and smoker")
+boxplot(charges~children, data=insurance,main="charges and children")
+boxplot(charges~age, data=insurance,main="charges and age")
+boxplot(charges~bmi, data=insurance,main="charges and bmi")
+boxplot(charges~region,data=insurance,main="charges and region")
+boxplot(charges~sex,data=insurance,main="charges and sex")
+```
+
+
